@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() &&
+        (request.auth.token.email == 'REPLACE_WITH_ADMIN_EMAIL' ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if signedIn() && request.auth.uid == uid
+                    && request.resource.data.role == 'student';
+      allow update: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == 'active';
+      allow update: if signedIn() &&
+        (isAdmin() ||
+         (resource.data.ownerUid == request.auth.uid &&
+          request.resource.data.ownerUid == resource.data.ownerUid));
+      allow delete: if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+    }
+
+    match /claims/{claimId} {
+      allow read: if signedIn() &&
+        (resource.data.claimantUid == request.auth.uid ||
+         resource.data.reportOwnerUid == request.auth.uid || isAdmin());
+      allow create: if signedIn() &&
+        request.resource.data.claimantUid == request.auth.uid &&
+        request.resource.data.status == 'pending';
+      allow update: if signedIn() &&
+        (isAdmin() || resource.data.reportOwnerUid == request.auth.uid ||
+         resource.data.claimantUid == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+  }
+}
